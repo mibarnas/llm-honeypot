@@ -236,3 +236,52 @@ async def test_sudo_help_goes_to_model(config):
         server.close()
         await server.wait_closed()
     assert "usage: sudo" in out and len(provider.requests) == 1
+
+
+async def test_missing_trailing_newline_is_added(config):
+    provider = FakeProvider([reply(output="admin")])
+    server, port = await start(config, provider)
+    try:
+        out = await shell(port, [("whoami", "$ ")])
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert "admin\r\nadmin@testhost:~$ " in out
+
+
+async def test_interactive_program_keeps_reading_input(config):
+    provider = FakeProvider([
+        reply(output="Python 3.11.2\n", program_prompt=">>> "),
+        reply(output="2\n", program_prompt=">>> "),
+        reply(output="", program_prompt=""),
+    ])
+    server, port = await start(config, provider)
+    try:
+        out = await shell(port, [("python3", ">>> "), ("1+1", ">>> "), ("exit()", "$ ")])
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert "Python 3.11.2\r\n>>> " in out and "2\r\n>>> " in out
+    assert "PROGRAM: python3\nINPUT: 1+1" in provider.requests[1][1][-1]["content"]
+    events = [r["event"] for r in records(config)]
+    assert "program_start" in events and "program_exit" in events
+
+
+async def test_ctrl_d_quits_interactive_program(config):
+    provider = FakeProvider([reply(output="Python 3.11.2\n", program_prompt=">>> ")])
+    server, port = await start(config, provider)
+    try:
+        async with await connect(port) as conn:
+            proc = await conn.create_process(term_type="xterm")
+            await read_until(proc, "$ ")
+            proc.stdin.write("python3\n")
+            await read_until(proc, ">>> ")
+            proc.stdin.write("\x04")
+            out = await read_until(proc, "$ ")
+            assert "admin@testhost:~$ " in out
+            proc.stdin.write("exit\n")
+            await proc.wait_closed()
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert len(provider.requests) == 1

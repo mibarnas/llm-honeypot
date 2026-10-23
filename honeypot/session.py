@@ -62,12 +62,17 @@ class ShellState:
     hostname: str
     # Shells entered via su/sudo; `exit` returns to the previous one.
     stack: list[tuple[str, str]] = field(default_factory=list)
+    # Interactive program (python3, mysql, ...) currently reading input, and its prompt.
+    program: str | None = None
+    program_prompt: str = ""
 
     @property
     def home(self) -> str:
         return "/root" if self.user == "root" else f"/home/{self.user}"
 
     def prompt(self) -> str:
+        if self.program:
+            return self.program_prompt
         cwd = self.cwd
         if cwd == self.home or cwd.startswith(self.home + "/"):
             cwd = "~" + cwd[len(self.home):]
@@ -108,6 +113,12 @@ class Session:
     def write(self, text: str) -> None:
         if text:
             self.process.stdout.write(text)
+
+    def write_output(self, text: str) -> None:
+        """Print model output, adding the trailing newline models tend to forget."""
+        if text and not text.endswith("\n"):
+            text += "\n"
+        self.write(text)
 
     def _set_echo(self, echo: bool) -> None:
         if self.interactive:
@@ -204,15 +215,27 @@ class Session:
         name = command.split()[0] if command.split() else command
         self.write(f"-bash: {name}: command not found\n")
 
-    def _remember(self, command: str, output: str) -> None:
+    def _remember(self, command: str, output: str, message: str | None = None) -> None:
         """Add a locally answered command to the history so the model stays consistent."""
-        self.history.append(
-            {"role": "user", "content": prompts.format_command(self.state.user, self.state.cwd, command)}
-        )
+        if message is None:
+            message = prompts.format_command(self.state.user, self.state.cwd, command)
+        self.history.append({"role": "user", "content": message})
         self.history.append(
             {"role": "assistant",
              "content": LLMResponse(output=output, user=self.state.user, cwd=self.state.cwd).to_json()}
         )
+
+    def _set_program(self, command: str, response: LLMResponse) -> None:
+        prompt = response.program_prompt
+        if prompt and self.interactive:
+            if self.state.program is None:
+                self.recorder.event("program_start", program=command, prompt=prompt)
+                self.state.program = command
+            self.state.program_prompt = prompt
+        elif self.state.program is not None:
+            self.recorder.event("program_exit", program=self.state.program)
+            self.state.program = None
+            self.state.program_prompt = ""
 
     async def deny_sudo(self, command: str, args: list[str]) -> None:
         """Answer a plain `sudo ...` like a real sudo for a user not in sudoers."""
@@ -255,7 +278,7 @@ class Session:
         last_failed = False
         root_ok = False
         while True:
-            self.write(response.output)
+            self.write_output(response.output)
             if not response.wants_password or rounds >= MAX_PASSWORD_ROUNDS:
                 if last_failed:
                     # A failed password never changes who the shell runs as.
@@ -265,6 +288,8 @@ class Session:
                     self.recorder.event("sudo_denied", command=command)
                     response.user, response.cwd = self.state.user, self.state.cwd
                 self._change_user(response.user, response.cwd, command)
+                if not last_failed:
+                    self._set_program(command, response)
                 return
 
             rounds += 1
@@ -289,6 +314,29 @@ class Session:
                 if not ok:
                     self.write("su: Authentication failure\n" if target == "root" else "Sorry, try again.\n")
                 return
+
+    async def run_input(self, text: str) -> None:
+        """Send a line typed inside an interactive program to the model."""
+        program = self.state.program
+        self.recorder.event("input", program=program, input=text, user=self.state.user,
+                            cwd=self.state.cwd)
+        response = await self.ask(prompts.format_input(self.state.user, self.state.cwd, program, text))
+        if response is None:
+            return
+        # The program runs in a child process: it cannot change the shell's user or cwd,
+        # and password prompts are only supported at the shell.
+        self.write_output(response.output)
+        self._set_program(program, response)
+
+    def leave_program(self) -> None:
+        """Ctrl-D inside an interactive program quits it, like it would for a real one."""
+        program = self.state.program
+        message = prompts.format_input(self.state.user, self.state.cwd, program, "<Ctrl-D>")
+        self.write("\n")
+        self.recorder.event("input", program=program, input="<Ctrl-D>", user=self.state.user,
+                            cwd=self.state.cwd)
+        self._set_program(program, LLMResponse(output="", user=self.state.user, cwd=self.state.cwd))
+        self._remember(program, "\n", message)
 
     def handle_local(self, command: str) -> bool | None:
         """Handle builtins that must not reach the LLM.
@@ -343,6 +391,21 @@ class Session:
         while True:
             self.write(self.state.prompt())
             line = await self.read_line()
+            if self.state.program:
+                # Ctrl-D is a soft EOF: it quits the program, the connection stays open.
+                if line is None:
+                    self.leave_program()
+                    continue
+                # A blank line ends a Python block; elsewhere it only repeats the prompt.
+                if not line.strip() and not self.state.program_prompt.startswith("..."):
+                    continue
+                self.commands += 1
+                if self.commands > self.config.max_commands:
+                    self.recorder.event("command_limit")
+                    self.write("\nConnection closed by remote host.\n")
+                    return
+                await self.run_input(line)
+                continue
             if line is None:
                 self.write("logout\n")
                 return

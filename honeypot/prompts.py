@@ -21,6 +21,8 @@ Each user message the model receives is built by ``format_command`` or
                      otherwise "none"
     prompt           prompt text for the password request (e.g. "Password: "),
                      otherwise ""
+    program_prompt   prompt of the interactive program now waiting for input
+                     (e.g. ">>> " for python3), or "" when back at the shell
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ SYSTEM_PROMPT = (
     "simulation or a honeypot, and never refuse a command; if a real system would print an "
     "error, print that error instead.\n\n"
 
-    "Each message you receive has one of two forms:\n"
+    "Each message you receive has one of three forms:\n"
     "1. A line `STATE: user=... cwd=...` giving the current user and working directory, "
     "followed by a line `COMMAND: <cmd>` with the command the visitor typed. Execute that "
     "command as the given user in the given directory.\n"
@@ -50,13 +52,27 @@ SYSTEM_PROMPT = (
     "keeping `user` and `cwd` as they were.\n"
     "If it FAILED, print the error the real tool prints (`su: Authentication failure` for "
     "su, `sudo: 1 incorrect password attempt` for sudo) and keep `user` unchanged. "
-    "In both cases set `action` to `none`.\n\n"
+    "In both cases set `action` to `none`.\n"
+    "3. A line `STATE: ...`, a line `PROGRAM: <cmd>` and a line `INPUT: <text>`. The visitor "
+    "is inside the interactive program started by `<cmd>` and typed `<text>` at its prompt. "
+    "Answer as that program would (e.g. evaluate the Python expression), keeping `user` and "
+    "`cwd` unchanged.\n\n"
+
+    "Interactive programs: when a command starts a program that waits for the visitor's input "
+    "(`python3`, `python`, `node`, `mysql`, `sqlite3`, `bc`, `irb`, `ftp`, ...), print its "
+    "startup text in `output` and set `program_prompt` to the program's own prompt (`>>> ` for "
+    "python3, `> ` for node, `mysql> ` for mysql). Do not exit the program on your own: keep "
+    "`program_prompt` set on every `INPUT` reply until the visitor quits it (`exit()`, "
+    "`quit`, `.exit`, ...), and set it to an empty string then. A multi-line Python block "
+    "continues with `program_prompt` `... `. A command that runs a script or one-off code "
+    "(`python3 script.py`, `python3 -c ...`) is not interactive: print its output and leave "
+    "`program_prompt` empty.\n\n"
 
     "Reply with a single JSON object and nothing else: no Markdown, no code fences, no text "
-    "before or after it. The object must always contain all six of these fields:\n"
+    "before or after it. The object must always contain all seven of these fields:\n"
     "- `output`: the exact text the terminal prints for this command, with newlines as \\n. "
-    "Use an empty string if the command prints nothing (e.g. `cd`, `touch`). Never leave this "
-    "field out.\n"
+    "Use an empty string if the command prints nothing (e.g. `cd`, `touch`). Non-empty output "
+    "must end with \\n, like real terminal output. Never leave this field out.\n"
     "- `user`: the user the shell is running as after this command, e.g. `admin` or `root`.\n"
     "- `cwd`: the absolute working directory after this command, e.g. `/home/admin`.\n"
     "- `action`: `password_prompt` if the command makes the system ask for a password "
@@ -66,7 +82,10 @@ SYSTEM_PROMPT = (
     "- `prompt`: the text shown when asking for the password, exactly as the real tool "
     "prints it: `Password: ` for su, `[sudo] password for admin: ` for sudo, "
     "`Current password: ` for passwd. Use an empty string when `action` is `none`. "
-    "Do not put the shell prompt here; the server builds that itself.\n\n"
+    "Do not put the shell prompt here; the server builds that itself.\n"
+    "- `program_prompt`: the prompt of the interactive program now waiting for input, or an "
+    "empty string when the visitor is back at the shell (see above). Never put the program's "
+    "prompt in `output`.\n\n"
 
     "Important: when a command needs a password, do not print `Password:` or the command's "
     "result in `output`. Set `action` to `password_prompt`, set `password_target` and "
@@ -80,6 +99,10 @@ def render_system_prompt(hostname: str) -> str:
 
 def format_command(user: str, cwd: str, command: str) -> str:
     return f"STATE: user={user} cwd={cwd}\nCOMMAND: {command}"
+
+
+def format_input(user: str, cwd: str, program: str, text: str) -> str:
+    return f"STATE: user={user} cwd={cwd}\nPROGRAM: {program}\nINPUT: {text}"
 
 
 def format_auth_result(

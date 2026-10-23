@@ -60,7 +60,8 @@ The env file is read from `--env-file`, then `$HONEYPOT_ENV_FILE`, then
 One JSONL file per connection in `LOG_DIR`, named
 `<utc-time>_<ip>_<session-id>.jsonl`. Events: `connect`, `auth`,
 `session_start`, `command`, `response` (with token usage), `password_prompt`
-(target and success only, never the password), `user_change`, `error`,
+(target and success only, never the password), `user_change`, `program_start` / `input` / `program_exit` (interactive programs such as
+`python3`), `error`,
 `idle_timeout`, `command_limit`, `disconnect`.
 
 ```bash

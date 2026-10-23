@@ -19,8 +19,9 @@ RESPONSE_SCHEMA = {
         "action": {"type": "string", "enum": ["none", "password_prompt"]},
         "password_target": {"type": "string", "enum": ["none", "root", "admin"]},
         "prompt": {"type": "string"},
+        "program_prompt": {"type": "string"},
     },
-    "required": ["output", "user", "cwd", "action", "password_target", "prompt"],
+    "required": ["output", "user", "cwd", "action", "password_target", "prompt", "program_prompt"],
     "additionalProperties": False,
 }
 
@@ -49,6 +50,7 @@ class LLMResponse:
     action: str = "none"
     password_target: str = "none"
     prompt: str = ""
+    program_prompt: str = ""
     raw: str = ""
 
     @property
@@ -64,6 +66,7 @@ class LLMResponse:
                 "action": self.action,
                 "password_target": self.password_target,
                 "prompt": self.prompt,
+                "program_prompt": self.program_prompt,
             },
             ensure_ascii=False,
         )
@@ -123,6 +126,7 @@ def parse_response(text: str, user: str, cwd: str) -> LLMResponse:
     action = data.get("action")
     target = data.get("password_target")
     prompt = data.get("prompt")
+    program_prompt = data.get("program_prompt")
 
     if not isinstance(new_user, str) or not _USERNAME_RE.match(new_user):
         new_user = user
@@ -140,6 +144,7 @@ def parse_response(text: str, user: str, cwd: str) -> LLMResponse:
         action=action,
         password_target=target,
         prompt=prompt if isinstance(prompt, str) else "",
+        program_prompt=program_prompt if isinstance(program_prompt, str) else "",
         raw=text,
     )
 

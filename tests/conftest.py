@@ -10,10 +10,11 @@ from honeypot.config import Config
 from honeypot.llm import Completion, LLMProvider
 
 
-def reply(output="", user="admin", cwd="/home/admin", action="none", target="none", prompt=""):
+def reply(output="", user="admin", cwd="/home/admin", action="none", target="none", prompt="",
+          program_prompt=""):
     return json.dumps(
         {"output": output, "user": user, "cwd": cwd, "action": action,
-         "password_target": target, "prompt": prompt}
+         "password_target": target, "prompt": prompt, "program_prompt": program_prompt}
     )
 
 
