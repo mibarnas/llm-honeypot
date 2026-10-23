@@ -1,0 +1,51 @@
+[Unit]
+Description=LLM SSH Honeypot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=llm-honeypot
+Group=llm-honeypot
+Environment=HONEYPOT_ENV_FILE=/etc/llm-honeypot/honeypot.env
+Environment=DATA_DIR=/var/lib/llm-honeypot
+Environment=LOG_DIR=/var/log/llm-honeypot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/llm-honeypot/venv/bin/llm-honeypot
+Restart=on-failure
+RestartSec=5
+# Exit code 2 = configuration error; restarting will not help.
+RestartPreventExitStatus=2
+
+StateDirectory=llm-honeypot
+StateDirectoryMode=0700
+LogsDirectory=llm-honeypot
+LogsDirectoryMode=0750
+
+# To listen on port 22 without root, set LISTEN_PORT=22 and uncomment:
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
