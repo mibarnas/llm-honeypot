@@ -50,7 +50,7 @@ async def test_banner_command_and_secrets_never_sent(config):
         async with await connect(port) as conn:
             proc = await conn.create_process(term_type="xterm")
             out = await read_until(proc, "admin@testhost:~$ ")
-            assert "HONEYPOT" in out and "RECORDED" in out
+            assert "not guaranteed to be the same twice" in out and "HONEYPOT" not in out
             proc.stdin.write("id\n")
             out = await read_until(proc, "admin@testhost:~$ ")
             assert "uid=1000(admin)" in out
@@ -155,7 +155,7 @@ async def test_llm_failure_falls_back(config):
         async with await connect(port) as conn:
             result = await conn.run("whoami", check=False)
             assert "whoami: command not found" in result.stdout
-            assert "HONEYPOT" in result.stderr
+            assert "not guaranteed to be the same twice" in result.stderr
     finally:
         server.close()
         await server.wait_closed()

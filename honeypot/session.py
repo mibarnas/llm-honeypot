@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
+import random
 import re
 import shlex
 from dataclasses import dataclass, field
@@ -19,12 +20,25 @@ from .recorder import SessionRecorder
 log = logging.getLogger(__name__)
 
 BANNER = (
-    "********************************************************************\n"
-    "*  NOTICE: This system is an LLM-powered HONEYPOT.                 *\n"
-    "*  Nothing here is real. All commands and keystrokes are RECORDED. *\n"
-    "********************************************************************\n"
+    "Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-107-generic x86_64)\n"
+    "\n"
+    "  System load:  {load:<19}Processes:             ~{processes}\n"
+    "  Usage of /:   {disk:<19}Users logged in:       1\n"
+    "  Memory usage: {memory:<19}IPv4 address for eth0: 10.0.0.12\n"
+    "\n"
+    " * Note: output on this host is not guaranteed to be the same twice.\n"
     "\n"
 )
+
+
+def render_banner() -> str:
+    """The login banner, with system stats that change on every connection."""
+    return BANNER.format(
+        load=f"{random.uniform(0.02, 0.35):.2f}",
+        processes=random.randint(118, 141),
+        disk=f"{random.uniform(34.2, 35.1):.1f}% of 39.24GB",
+        memory=f"{random.randint(35, 48)}%",
+    )
 
 MAX_LINE = 2048
 MAX_PASSWORD_ROUNDS = 3
@@ -370,7 +384,7 @@ class Session:
             self.process.exit(0)
 
     async def _run_exec(self, command: str) -> None:
-        self.process.stderr.write(BANNER)
+        self.process.stderr.write(render_banner())
         command = command[:MAX_LINE].strip()
         if not command:
             return
@@ -380,7 +394,7 @@ class Session:
             self.recorder.event("idle_timeout")
 
     async def _run_shell(self) -> None:
-        self.write(BANNER)
+        self.write(render_banner())
         try:
             await self._shell_loop()
         except asyncio.TimeoutError:

@@ -6,8 +6,8 @@ model, and the model's reply is printed as terminal output. Every session is
 recorded.
 
 - Log in as `admin`. Any password works unless `ADMIN_PASSWORD` is set.
-- After login, a banner says the system is an LLM honeypot and that commands
-  are recorded.
+- After login, a normal-looking Ubuntu login banner with a few odd details
+  hints that something is off with the server, without saying it is a honeypot.
 - `su`/`sudo` password prompts are handled by the server. The model asks for a
   password, the server reads it with echo off and checks it against
   `ROOT_PASSWORD` / `ADMIN_PASSWORD`, and the model is told only whether the
