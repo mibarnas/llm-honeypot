@@ -25,8 +25,19 @@ install -d -m 0755 "$PREFIX/src"
 cp -r "$SRC/honeypot" "$SRC/pyproject.toml" "$SRC/README.md" "$PREFIX/src/"
 find "$PREFIX/src" -name '__pycache__' -prune -exec rm -rf {} +
 
-if [[ ! -x $PREFIX/venv/bin/python ]]; then
-    python3 -m venv "$PREFIX/venv"
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+    echo "Python 3.11 or newer is required (found $(python3 --version 2>&1))" >&2
+    exit 1
+fi
+
+# A venv without pip is left behind when an earlier run failed half way; rebuild it.
+if [[ ! -x $PREFIX/venv/bin/pip ]]; then
+    rm -rf "$PREFIX/venv"
+    if ! python3 -m venv "$PREFIX/venv"; then
+        rm -rf "$PREFIX/venv"
+        echo "creating the venv failed - install the venv module: apt install python3-venv" >&2
+        exit 1
+    fi
 fi
 "$PREFIX/venv/bin/pip" install --quiet --upgrade pip
 "$PREFIX/venv/bin/pip" install --quiet "$PREFIX/src"
